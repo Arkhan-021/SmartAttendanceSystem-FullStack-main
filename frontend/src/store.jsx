@@ -9,6 +9,7 @@ const HEARTBEAT_STALE_SECONDS = 20
 // Backstop for changes the realtime socket silently misses; half the backend's
 // 5s heartbeat so even a dead socket lags by at most a couple of seconds.
 const STATUS_POLL_MS = 2500
+const IDLE_TIMEOUT_MS = 300_000
 
 function describeBackend(status) {
   if (status?.connected) {
@@ -103,20 +104,54 @@ export function AppProvider({ children }) {
   }, [refreshStaff])
 
   const signOut = useCallback(async () => {
-    await endSession()
-    setUser(null)
-    setStaff(null)
-    setTimeRemaining(null)
-    // Drop the roster too, so a signed-out screen can never render class data
-    // left over in memory from the previous session.
-    setStudents([])
-    setLogs([])
-    setMarks([])
-    setTeam([])
-    // The Scan Station is the signed-out face of the app, so signing out from
-    // any role lands back on it instead of the login form.
-    window.location.hash = '#/kiosk'
+    try {
+      await endSession()
+    } finally {
+      setUser(null)
+      setStaff(null)
+      setTimeRemaining(null)
+      // Drop the roster too, so a signed-out screen can never render class data
+      // left over in memory from the previous session.
+      setStudents([])
+      setLogs([])
+      setMarks([])
+      setTeam([])
+      // The Scan Station is the signed-out face of the app, so signing out from
+      // any role lands back on it instead of the login form.
+      window.location.hash = '#/kiosk'
+    }
   }, [])
+
+  useEffect(() => {
+    if (!user || mode !== 'live') return undefined
+
+    let lastActivity = Date.now()
+    const channel =
+      typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('smartattendance-activity')
+    const recordActivity = () => {
+      lastActivity = Date.now()
+      channel?.postMessage(lastActivity)
+    }
+    if (channel) {
+      channel.onmessage = (event) => {
+        if (typeof event.data === 'number') lastActivity = Math.max(lastActivity, event.data)
+      }
+    }
+
+    const activityEvents = ['pointerdown', 'keydown', 'mousemove', 'touchstart', 'wheel']
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, recordActivity, { passive: true }))
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivity >= IDLE_TIMEOUT_MS) {
+        signOut().catch((error) => setLoadError(error.message))
+      }
+    }, 5000)
+
+    return () => {
+      clearInterval(timer)
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, recordActivity))
+      channel?.close()
+    }
+  }, [user, signOut])
 
   // The grades the signed-in staff member teaches, and the one they are working
   // in right now. A professor with several needs one at a time on screen,

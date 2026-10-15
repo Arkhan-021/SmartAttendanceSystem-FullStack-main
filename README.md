@@ -123,7 +123,8 @@ the signed-in email and sign out — deliberately no name or role text in the ba
 Signed-out visitors get no navigation at all — just the sign-in card, with a
 **Sign up** button. That means **the entrance monitor must be signed in as a
 teacher** to show the kiosk; Supabase keeps the session in local storage, so
-signing in once is enough. Below 900px the sidebar collapses to a horizontal bar.
+signing in once is enough. Staff are automatically signed out after two minutes
+without activity. Below 900px the sidebar collapses to a horizontal bar.
 
 ## 5. Roles
 
